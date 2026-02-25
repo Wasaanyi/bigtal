@@ -6,8 +6,19 @@ on:
       - 'v*'
 
 jobs:
-  release:
-    runs-on: windows-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            build_cmd: --win
+          - os: macos-latest
+            build_cmd: --mac
+          - os: ubuntu-latest
+            build_cmd: --linux
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +37,20 @@ jobs:
       - name: Build main process (TypeScript)
         run: npx tsc -p tsconfig.main.json
 
-      - name: Package and publish for Windows
-        run: npx electron-builder --win --publish always
+      - name: Verify compiled entry point exists
+        shell: bash
+        run: |
+          if [ ! -f "dist/main/main/index.js" ]; then
+            echo "ERROR: dist/main/main/index.js was not produced by tsc"
+            echo "--- dist/ tree ---"
+            find dist -type f 2>/dev/null | sort || echo "(dist/ is empty or missing)"
+            exit 1
+          fi
+          echo "OK: dist/main/main/index.js exists"
+
+      - name: Package and publish
+        run: npx electron-builder ${{ matrix.build_cmd }} --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Disable macOS code-signing auto-discovery (no cert configured)
+          CSC_IDENTITY_AUTO_DISCOVERY: false
