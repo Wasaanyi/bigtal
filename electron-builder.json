@@ -40,5 +40,10 @@
     "icon": "assets/icons",
     "artifactName": "${productName}-${version}-linux.${ext}",
     "category": "Office"
+  },
+  "publish": {
+    "provider": "github",
+    "owner": "wasaanyi",
+    "repo": "bigtal"
   }
 }

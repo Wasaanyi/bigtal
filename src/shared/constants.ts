@@ -111,6 +111,16 @@ export const IPC_CHANNELS = {
 
   // User email
   USER_UPDATE_EMAIL: 'user:update-email',
+
+  // Updater
+  UPDATER_CHECK: 'updater:check',
+  UPDATER_DOWNLOAD: 'updater:download',
+  UPDATER_INSTALL: 'updater:install',
+  UPDATER_AVAILABLE: 'updater:available',
+  UPDATER_NOT_AVAILABLE: 'updater:not-available',
+  UPDATER_PROGRESS: 'updater:progress',
+  UPDATER_DOWNLOADED: 'updater:downloaded',
+  UPDATER_ERROR: 'updater:error',
 } as const;
 
 // Default currencies for African markets

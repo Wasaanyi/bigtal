@@ -291,3 +291,18 @@ export interface CreateUserDTO {
   role: UserRole;
   email?: string;
 }
+
+// Auto-updater types
+export interface UpdateAvailableInfo {
+  version: string;
+  releaseDate: string;
+  releaseName?: string;
+  releaseNotes?: string | null;
+}
+
+export interface UpdateProgressInfo {
+  percent: number;
+  transferred: number;
+  total: number;
+  bytesPerSecond: number;
+}

@@ -20,6 +20,7 @@ import { exportService } from '../services/exportService';
 import { emailService, EmailConfig } from '../services/emailService';
 import { businessService } from '../services/businessService';
 import { databaseBackupService } from '../services/databaseBackupService';
+import { updaterService } from '../services/updaterService';
 import type {
   ApiResponse,
   UserSession,
@@ -1081,5 +1082,28 @@ export function registerIpcHandlers(): void {
     } catch (error) {
       return createError((error as Error).message);
     }
+  });
+
+  // Updater handlers
+  ipcMain.handle(IPC_CHANNELS.UPDATER_CHECK, async () => {
+    try {
+      updaterService.checkForUpdates();
+      return createResponse(undefined);
+    } catch (error) {
+      return createError((error as Error).message);
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATER_DOWNLOAD, async () => {
+    try {
+      updaterService.downloadUpdate();
+      return createResponse(undefined);
+    } catch (error) {
+      return createError((error as Error).message);
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATER_INSTALL, () => {
+    updaterService.installUpdate();
   });
 }

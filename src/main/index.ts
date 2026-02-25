@@ -3,6 +3,7 @@ import path from 'path';
 import { initDatabase, closeDatabase } from './database/connection';
 import { runMigrations } from './database/migrations';
 import { registerIpcHandlers } from './ipc';
+import { updaterService } from './services/updaterService';
 import { IPC_CHANNELS } from '../shared/constants';
 
 let mainWindow: BrowserWindow | null = null;
@@ -77,6 +78,15 @@ app.whenReady().then(async () => {
 
     // Create window
     createWindow();
+
+    // Initialize auto-updater
+    if (mainWindow) {
+      updaterService.setWindow(mainWindow);
+      updaterService.init();
+      mainWindow.webContents.once('did-finish-load', () => {
+        setTimeout(() => updaterService.checkForUpdates(), 3000);
+      });
+    }
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {

@@ -27,6 +27,8 @@ import type {
   InventoryReportData,
   TradingPLData,
   BalanceSheetData,
+  UpdateAvailableInfo,
+  UpdateProgressInfo,
 } from '../shared/types';
 
 // Expose protected APIs to renderer
@@ -275,6 +277,44 @@ contextBridge.exposeInMainWorld('api', {
     balanceSheet: (asOfDate?: string): Promise<ApiResponse<BalanceSheetData>> =>
       ipcRenderer.invoke(IPC_CHANNELS.REPORTS_BALANCE_SHEET, asOfDate),
   },
+
+  // Updater
+  updater: {
+    check: (): Promise<ApiResponse<void>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.UPDATER_CHECK),
+    download: (): Promise<ApiResponse<void>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.UPDATER_DOWNLOAD),
+    install: (): void => { ipcRenderer.invoke(IPC_CHANNELS.UPDATER_INSTALL); },
+    onAvailable: (cb: (info: UpdateAvailableInfo) => void): (() => void) => {
+      ipcRenderer.on(IPC_CHANNELS.UPDATER_AVAILABLE, (_e, info) => cb(info));
+      return () => ipcRenderer.removeAllListeners(IPC_CHANNELS.UPDATER_AVAILABLE);
+    },
+    onNotAvailable: (cb: () => void): (() => void) => {
+      ipcRenderer.on(IPC_CHANNELS.UPDATER_NOT_AVAILABLE, () => cb());
+      return () => ipcRenderer.removeAllListeners(IPC_CHANNELS.UPDATER_NOT_AVAILABLE);
+    },
+    onProgress: (cb: (info: UpdateProgressInfo) => void): (() => void) => {
+      ipcRenderer.on(IPC_CHANNELS.UPDATER_PROGRESS, (_e, info) => cb(info));
+      return () => ipcRenderer.removeAllListeners(IPC_CHANNELS.UPDATER_PROGRESS);
+    },
+    onDownloaded: (cb: () => void): (() => void) => {
+      ipcRenderer.on(IPC_CHANNELS.UPDATER_DOWNLOADED, () => cb());
+      return () => ipcRenderer.removeAllListeners(IPC_CHANNELS.UPDATER_DOWNLOADED);
+    },
+    onError: (cb: (message: string) => void): (() => void) => {
+      ipcRenderer.on(IPC_CHANNELS.UPDATER_ERROR, (_e, msg) => cb(msg));
+      return () => ipcRenderer.removeAllListeners(IPC_CHANNELS.UPDATER_ERROR);
+    },
+    removeListeners: (): void => {
+      [
+        IPC_CHANNELS.UPDATER_AVAILABLE,
+        IPC_CHANNELS.UPDATER_NOT_AVAILABLE,
+        IPC_CHANNELS.UPDATER_PROGRESS,
+        IPC_CHANNELS.UPDATER_DOWNLOADED,
+        IPC_CHANNELS.UPDATER_ERROR,
+      ].forEach((ch) => ipcRenderer.removeAllListeners(ch));
+    },
+  },
 });
 
 // Type declarations for renderer
@@ -416,6 +456,17 @@ declare global {
         inventory: () => Promise<ApiResponse<InventoryReportData>>;
         tradingPL: (startDate: string, endDate: string) => Promise<ApiResponse<TradingPLData>>;
         balanceSheet: (asOfDate?: string) => Promise<ApiResponse<BalanceSheetData>>;
+      };
+      updater: {
+        check: () => Promise<ApiResponse<void>>;
+        download: () => Promise<ApiResponse<void>>;
+        install: () => void;
+        onAvailable: (cb: (info: UpdateAvailableInfo) => void) => () => void;
+        onNotAvailable: (cb: () => void) => () => void;
+        onProgress: (cb: (info: UpdateProgressInfo) => void) => () => void;
+        onDownloaded: (cb: () => void) => () => void;
+        onError: (cb: (message: string) => void) => () => void;
+        removeListeners: () => void;
       };
     };
   }

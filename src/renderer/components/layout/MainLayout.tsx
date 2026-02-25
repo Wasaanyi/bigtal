@@ -6,6 +6,7 @@ import { useUIStore } from '../../store/uiStore';
 import { useDataStore } from '../../store/dataStore';
 import { useAuthStore } from '../../store/authStore';
 import { ExpenseDrawer, ProductDrawer } from '../drawers';
+import { UpdateModal } from '../UpdateModal';
 
 export function MainLayout() {
   const { sidebarCollapsed, notification, clearNotification } = useUIStore();
@@ -37,6 +38,7 @@ export function MainLayout() {
       {/* Global Drawers */}
       <ExpenseDrawer />
       <ProductDrawer />
+      <UpdateModal />
 
       {/* Notification Toast */}
       {notification && (
