@@ -57,3 +57,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Disable macOS code-signing auto-discovery (no cert configured)
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          # appimagetool is itself an AppImage and needs FUSE to self-mount.
+          # Ubuntu 22.04/24.04 runners only ship libfuse3, so we tell it to
+          # extract-and-run instead of mounting via FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: 1
