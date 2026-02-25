@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0D9488"/>
+      <stop offset="100%" style="stop-color:#0F766E"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="url(#bgGradient)"/>
+
+  <!-- Stylized B with stacked receipt/bar chart effect -->
+  <g fill="white">
+    <!-- Main B shape -->
+    <path d="M160 96h120c44.183 0 80 35.817 80 80 0 26.5-12.9 50-32.7 64.7C355.6 254.8 376 290.4 376 330c0 47.5-38.5 86-86 86H160V96zm60 60v80h60c22.091 0 40-17.909 40-40s-17.909-40-40-40h-60zm0 140v66h70c18.225 0 33-14.775 33-33s-14.775-33-33-33h-70z"/>
+  </g>
+
+  <!-- Accent bar (rising chart effect) -->
+  <rect x="376" y="280" width="40" height="136" rx="8" fill="#F59E0B"/>
+  <rect x="316" y="320" width="40" height="96" rx="8" fill="#F59E0B" opacity="0.7"/>
+</svg>
