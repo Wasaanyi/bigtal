@@ -20,16 +20,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build and package
-        run: npm run package:win
+      - name: Build renderer (Vite)
+        run: npx vite build
+
+      - name: Build main process (TypeScript)
+        run: npx tsc -p tsconfig.main.json
+
+      - name: Package and publish for Windows
+        run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            release/*.exe
-            release/*.yml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
