@@ -1,5 +1,9 @@
 # Bigtal - Small Business Management
 
+#### Video Demo: [https://youtu.be/94_agseG2nM](https://youtu.be/94_agseG2nM)
+
+#### Description:
+
 A desktop application for small shops in Uganda and Africa. Wave Accounting-inspired simplicity with max 3 clicks for main actions.
 
 ## Tech Stack
