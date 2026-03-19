@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
 /**
- * Downloads and extracts PostgreSQL 16 binaries for the target platform.
+ * Downloads and extracts PostgreSQL binaries for the target platform.
  * Usage: node scripts/download-postgres.js [win|mac|linux]
  *
- * Downloads from EnterpriseDB (Windows) or official PostgreSQL (macOS/Linux).
- * Extracts only the essential binaries needed for embedded use.
+ * Windows: downloads from EnterpriseDB binary archive
+ * macOS:   installs via Homebrew and copies binaries
+ * Linux:   downloads from EnterpriseDB binary archive
  */
 
 const https = require('https');
@@ -23,8 +24,7 @@ const ESSENTIAL_BINS = [
 
 const URLS = {
   win: `https://get.enterprisedb.com/postgresql/postgresql-${PG_VERSION}-1-windows-x64-binaries.zip`,
-  // For macOS and Linux, users should use system PostgreSQL or Homebrew/apt
-  // These URLs are placeholders — real builds may need to be sourced differently
+  linux: `https://get.enterprisedb.com/postgresql/postgresql-${PG_VERSION}-1-linux-x64-binaries.tar.gz`,
 };
 
 const targetPlatform = process.argv[2] || {
@@ -46,10 +46,14 @@ function download(url, dest) {
     const get = url.startsWith('https') ? https.get : http.get;
     get(url, (response) => {
       if (response.statusCode === 302 || response.statusCode === 301) {
+        file.close();
+        fs.unlinkSync(dest);
         download(response.headers.location, dest).then(resolve).catch(reject);
         return;
       }
       if (response.statusCode !== 200) {
+        file.close();
+        fs.unlinkSync(dest);
         reject(new Error(`HTTP ${response.statusCode} for ${url}`));
         return;
       }
@@ -69,7 +73,7 @@ function download(url, dest) {
         resolve();
       });
     }).on('error', (err) => {
-      fs.unlinkSync(dest);
+      try { fs.unlinkSync(dest); } catch { /* ignore */ }
       reject(err);
     });
   });
@@ -78,41 +82,65 @@ function download(url, dest) {
 async function extractWindows(zipPath) {
   const extractDir = path.join(path.dirname(zipPath), 'pg-extract');
 
-  // Use PowerShell to extract
   console.log('Extracting...');
   execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${extractDir}' -Force"`, {
     stdio: 'inherit',
   });
 
-  // Find the pgsql directory
   const pgsqlDir = path.join(extractDir, 'pgsql');
+  copyPgsqlDir(pgsqlDir);
 
-  // Copy essential binaries
+  // Cleanup
+  fs.rmSync(extractDir, { recursive: true, force: true });
+  fs.unlinkSync(zipPath);
+  console.log('  Cleaned up temp files');
+}
+
+async function extractLinux(tarPath) {
+  const extractDir = path.join(path.dirname(tarPath), 'pg-extract');
+  fs.mkdirSync(extractDir, { recursive: true });
+
+  console.log('Extracting...');
+  execSync(`tar -xzf "${tarPath}" -C "${extractDir}"`, { stdio: 'inherit' });
+
+  const pgsqlDir = path.join(extractDir, 'pgsql');
+  copyPgsqlDir(pgsqlDir);
+
+  // Cleanup
+  fs.rmSync(extractDir, { recursive: true, force: true });
+  fs.unlinkSync(tarPath);
+  console.log('  Cleaned up temp files');
+}
+
+function copyPgsqlDir(pgsqlDir) {
   fs.mkdirSync(path.join(outDir, 'bin'), { recursive: true });
   fs.mkdirSync(path.join(outDir, 'lib'), { recursive: true });
   fs.mkdirSync(path.join(outDir, 'share'), { recursive: true });
 
+  const ext = targetPlatform === 'win' ? '.exe' : '';
+
   for (const bin of ESSENTIAL_BINS) {
-    const src = path.join(pgsqlDir, 'bin', `${bin}.exe`);
-    const dest = path.join(outDir, 'bin', `${bin}.exe`);
+    const src = path.join(pgsqlDir, 'bin', `${bin}${ext}`);
+    const dest = path.join(outDir, 'bin', `${bin}${ext}`);
     if (fs.existsSync(src)) {
       fs.copyFileSync(src, dest);
-      console.log(`  Copied ${bin}.exe`);
+      if (targetPlatform !== 'win') fs.chmodSync(dest, 0o755);
+      console.log(`  Copied ${bin}${ext}`);
     }
   }
 
-  // Copy required DLLs from bin/
+  // Copy DLLs (Windows) or shared libraries
   const binDir = path.join(pgsqlDir, 'bin');
   if (fs.existsSync(binDir)) {
     for (const file of fs.readdirSync(binDir)) {
-      if (file.endsWith('.dll')) {
+      if (file.endsWith('.dll') || file.endsWith('.so') || file.includes('.so.')) {
         fs.copyFileSync(path.join(binDir, file), path.join(outDir, 'bin', file));
       }
     }
-    console.log('  Copied DLLs');
+    console.log('  Copied shared libraries from bin/');
   }
 
-  // Copy lib directory (needed for shared libraries)
+  // Copy lib directory
   const libDir = path.join(pgsqlDir, 'lib');
   if (fs.existsSync(libDir)) {
     copyDirSync(libDir, path.join(outDir, 'lib'));
@@ -125,11 +153,62 @@ async function extractWindows(zipPath) {
     copyDirSync(shareDir, path.join(outDir, 'share'));
     console.log('  Copied share/');
   }
+}
 
-  // Cleanup
-  fs.rmSync(extractDir, { recursive: true, force: true });
-  fs.unlinkSync(zipPath);
-  console.log('  Cleaned up temp files');
+async function prepareMac() {
+  // Install via Homebrew (handles arm64/x64 automatically)
+  console.log('Installing PostgreSQL via Homebrew...');
+  try {
+    execSync('brew install postgresql@17', { stdio: 'inherit' });
+  } catch {
+    // May already be installed, try to continue
+    console.log('brew install failed or already installed, attempting to locate binaries...');
+  }
+
+  const prefix = execSync('brew --prefix postgresql@17', { encoding: 'utf8' }).trim();
+  if (!fs.existsSync(prefix)) {
+    throw new Error(`Homebrew PostgreSQL prefix not found: ${prefix}`);
+  }
+
+  console.log(`Using Homebrew PostgreSQL at: ${prefix}`);
+
+  fs.mkdirSync(path.join(outDir, 'bin'), { recursive: true });
+  fs.mkdirSync(path.join(outDir, 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(outDir, 'share'), { recursive: true });
+
+  // Copy essential binaries
+  for (const bin of ESSENTIAL_BINS) {
+    const src = path.join(prefix, 'bin', bin);
+    const dest = path.join(outDir, 'bin', bin);
+    if (fs.existsSync(src)) {
+      fs.copyFileSync(src, dest);
+      fs.chmodSync(dest, 0o755);
+      console.log(`  Copied ${bin}`);
+    }
+  }
+
+  // Copy lib directory (dylibs)
+  const libDir = path.join(prefix, 'lib', 'postgresql@17');
+  const libDirAlt = path.join(prefix, 'lib');
+  const srcLib = fs.existsSync(libDir) ? libDir : libDirAlt;
+  if (fs.existsSync(srcLib)) {
+    // Copy only .dylib files to keep size down
+    for (const file of fs.readdirSync(srcLib)) {
+      if (file.endsWith('.dylib') || file.includes('.dylib.')) {
+        fs.copyFileSync(path.join(srcLib, file), path.join(outDir, 'lib', file));
+      }
+    }
+    console.log('  Copied dylibs');
+  }
+
+  // Copy share directory
+  const shareDir = path.join(prefix, 'share', 'postgresql@17');
+  const shareDirAlt = path.join(prefix, 'share');
+  const srcShare = fs.existsSync(shareDir) ? shareDir : shareDirAlt;
+  if (fs.existsSync(srcShare)) {
+    copyDirSync(srcShare, path.join(outDir, 'share'));
+    console.log('  Copied share/');
+  }
 }
 
 function copyDirSync(src, dest) {
@@ -161,16 +240,11 @@ async function main() {
     await download(URLS.win, zipPath);
     await extractWindows(zipPath);
   } else if (targetPlatform === 'mac') {
-    console.log('macOS: Use Homebrew to install PostgreSQL 16, then copy binaries:');
-    console.log('  brew install postgresql@16');
-    console.log(`  cp -R $(brew --prefix postgresql@16)/{bin,lib,share} ${outDir}/`);
-    console.log('Then trim to essential binaries only.');
+    await prepareMac();
   } else if (targetPlatform === 'linux') {
-    console.log('Linux: Use your package manager to install PostgreSQL 16, then copy binaries:');
-    console.log('  sudo apt install postgresql-16');
-    console.log(`  mkdir -p ${outDir}/{bin,lib,share}`);
-    console.log(`  cp /usr/lib/postgresql/16/bin/{${ESSENTIAL_BINS.join(',')}} ${outDir}/bin/`);
-    console.log('Then copy required shared libraries and share/ data.');
+    const tarPath = path.join(outDir, '..', 'pg-linux.tar.gz');
+    await download(URLS.linux, tarPath);
+    await extractLinux(tarPath);
   }
 
   console.log(`\nDone! Binaries ready in: ${outDir}`);

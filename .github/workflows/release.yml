@@ -51,6 +51,9 @@ jobs:
           fi
           echo "OK: dist/main/main/index.js exists"
 
+      - name: Download PostgreSQL binaries
+        run: npm run prepare:postgres
+
       - name: Package and publish
         run: npx electron-builder ${{ matrix.build_cmd }} --publish always
         env:
