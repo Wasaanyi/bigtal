@@ -97,42 +97,36 @@ export const invoiceRepository = {
 
   async create(data: CreateInvoiceDTO, userId: number): Promise<InvoiceWithItems> {
     const db = getDatabase();
-    const pglite = db.getPglite();
 
     // Calculate total
     const total = data.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
     const invoiceNumber = await this.generateInvoiceNumber();
 
-    // Use PGlite transaction directly for async operations
-    await pglite.exec('BEGIN');
-
-    try {
-      const invoiceResult = await db.prepare(`
+    const invoiceId = await db.transact(async (tx) => {
+      const invoiceResult = await tx.prepare(`
         INSERT INTO invoices (invoice_number, customer_id, currency_id, total_amount, due_date, created_by_user_id, status, created_at)
         VALUES (?, ?, ?, ?, ?, ?, 'draft', COALESCE(?, NOW())) RETURNING id
       `).run(invoiceNumber, data.customer_id, data.currency_id, total, data.due_date || null, userId, data.created_at || null);
 
-      const invoiceId = invoiceResult.lastInsertRowid;
+      const id = invoiceResult.lastInsertRowid;
 
       for (const item of data.items) {
         const lineTotal = item.quantity * item.unit_price;
-        await db.prepare(`
+        await tx.prepare(`
           INSERT INTO invoice_items (invoice_id, product_id, quantity, unit_price, line_total)
           VALUES (?, ?, ?, ?, ?)
-        `).run(invoiceId, item.product_id, item.quantity, item.unit_price, lineTotal);
+        `).run(id, item.product_id, item.quantity, item.unit_price, lineTotal);
 
         // Decrease stock
-        await db.prepare(`
+        await tx.prepare(`
           UPDATE products SET stock_qty = stock_qty - ? WHERE id = ?
         `).run(item.quantity, item.product_id);
       }
 
-      await pglite.exec('COMMIT');
-      return (await this.findById(invoiceId))!;
-    } catch (error) {
-      await pglite.exec('ROLLBACK');
-      throw error;
-    }
+      return id;
+    });
+
+    return (await this.findById(invoiceId))!;
   },
 
   async updateStatus(id: number, status: InvoiceStatus): Promise<Invoice | null> {
@@ -158,32 +152,25 @@ export const invoiceRepository = {
 
   async delete(id: number): Promise<boolean> {
     const db = getDatabase();
-    const pglite = db.getPglite();
 
     // First get invoice items to restore stock
     const items = await db
       .prepare('SELECT product_id, quantity FROM invoice_items WHERE invoice_id = ?')
       .all(id) as { product_id: number; quantity: number }[];
 
-    await pglite.exec('BEGIN');
-
-    try {
+    await db.transact(async (tx) => {
       for (const item of items) {
-        await db.prepare('UPDATE products SET stock_qty = stock_qty + ? WHERE id = ?').run(
+        await tx.prepare('UPDATE products SET stock_qty = stock_qty + ? WHERE id = ?').run(
           item.quantity,
           item.product_id
         );
       }
 
       // Delete invoice (items will cascade)
-      await db.prepare('DELETE FROM invoices WHERE id = ?').run(id);
+      await tx.prepare('DELETE FROM invoices WHERE id = ?').run(id);
+    });
 
-      await pglite.exec('COMMIT');
-      return true;
-    } catch (error) {
-      await pglite.exec('ROLLBACK');
-      throw error;
-    }
+    return true;
   },
 
   async getTodayIncome(): Promise<number> {

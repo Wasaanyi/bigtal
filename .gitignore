@@ -25,6 +25,9 @@ release/
 .DS_Store
 Thumbs.db
 
+# PostgreSQL binaries (downloaded at build time)
+postgres-binaries/
+
 # Logs
 *.log
 npm-debug.log*

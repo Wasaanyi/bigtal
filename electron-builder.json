@@ -14,6 +14,9 @@
     },
     "package.json"
   ],
+  "asarUnpack": [
+    "node_modules/@electric-sql/pglite/**"
+  ],
   "extraResources": [
     {
       "from": "assets/",
@@ -24,7 +27,14 @@
   "win": {
     "target": ["nsis"],
     "icon": "assets/icons/icon.ico",
-    "artifactName": "${productName}-${version}-win.${ext}"
+    "artifactName": "${productName}-${version}-win.${ext}",
+    "extraResources": [
+      {
+        "from": "postgres-binaries/win/",
+        "to": "postgres/",
+        "filter": ["**/*"]
+      }
+    ]
   },
   "nsis": {
     "oneClick": false,
@@ -37,13 +47,27 @@
     "target": ["dmg"],
     "icon": "assets/icons/icon.png",
     "artifactName": "${productName}-${version}-mac.${ext}",
-    "category": "public.app-category.business"
+    "category": "public.app-category.business",
+    "extraResources": [
+      {
+        "from": "postgres-binaries/mac/",
+        "to": "postgres/",
+        "filter": ["**/*"]
+      }
+    ]
   },
   "linux": {
     "target": ["AppImage", "deb"],
     "icon": "assets/icons",
     "artifactName": "${productName}-${version}-linux.${ext}",
-    "category": "Office"
+    "category": "Office",
+    "extraResources": [
+      {
+        "from": "postgres-binaries/linux/",
+        "to": "postgres/",
+        "filter": ["**/*"]
+      }
+    ]
   },
   "publish": {
     "provider": "github",

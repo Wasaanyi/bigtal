@@ -4,13 +4,10 @@ import type { InventoryMovement, CreateInventoryDTO } from '../../../shared/type
 export const inventoryRepository = {
   async create(data: CreateInventoryDTO, userId: number): Promise<InventoryMovement> {
     const db = getDatabase();
-    const pglite = db.getPglite();
 
-    await pglite.exec('BEGIN');
-
-    try {
+    const movementId = await db.transact(async (tx) => {
       // Create the movement record
-      const result = await db.prepare(`
+      const result = await tx.prepare(`
         INSERT INTO inventory_movements (product_id, quantity, movement_type, reference_type, reference_id, notes, unit_cost, created_by)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
       `).run(
@@ -25,17 +22,14 @@ export const inventoryRepository = {
       );
 
       // Update product stock quantity
-      await db.prepare(`
+      await tx.prepare(`
         UPDATE products SET stock_qty = stock_qty + ? WHERE id = ?
       `).run(data.quantity, data.product_id);
 
-      await pglite.exec('COMMIT');
+      return result.lastInsertRowid;
+    });
 
-      return (await this.findById(result.lastInsertRowid))!;
-    } catch (error) {
-      await pglite.exec('ROLLBACK');
-      throw error;
-    }
+    return (await this.findById(movementId))!;
   },
 
   async findById(id: number): Promise<InventoryMovement | null> {

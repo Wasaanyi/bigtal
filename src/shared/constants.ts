@@ -102,6 +102,7 @@ export const IPC_CHANNELS = {
   // Database backup/restore
   DATABASE_EXPORT: 'database:export',
   DATABASE_IMPORT: 'database:import',
+  DATABASE_RESET: 'database:reset',
 
   // Reports
   REPORTS_SALES: 'reports:sales',
