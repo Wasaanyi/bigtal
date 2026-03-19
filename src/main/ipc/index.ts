@@ -20,6 +20,9 @@ import { exportService } from '../services/exportService';
 import { emailService, EmailConfig } from '../services/emailService';
 import { businessService } from '../services/businessService';
 import { databaseBackupService } from '../services/databaseBackupService';
+import { resetDatabase, initDatabase } from '../database/connection';
+import { postgresManager } from '../database/postgresManager';
+import { runMigrations } from '../database/migrations';
 import { updaterService } from '../services/updaterService';
 import type {
   ApiResponse,
@@ -47,6 +50,10 @@ function createResponse<T>(data: T): ApiResponse<T> {
 
 function createError(error: string): ApiResponse<never> {
   return { success: false, error };
+}
+
+function handleError(error: unknown): ApiResponse<never> {
+  return createError((error as Error).message);
 }
 
 async function sendLogoutNotification(user: User): Promise<void> {
@@ -446,7 +453,7 @@ export function registerIpcHandlers(): void {
         const invoice = await invoiceRepository.create(data, userId);
         return createResponse(invoice);
       } catch (error) {
-        return createError((error as Error).message);
+        return handleError(error);
       }
     }
   );
@@ -1036,6 +1043,16 @@ export function registerIpcHandlers(): void {
         return createResponse(undefined);
       }
       return createError(result.error || 'Import failed');
+    } catch (error) {
+      return createError((error as Error).message);
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DATABASE_RESET, async () => {
+    try {
+      await resetDatabase();
+      await runMigrations();
+      return createResponse(undefined);
     } catch (error) {
       return createError((error as Error).message);
     }

@@ -56,10 +56,14 @@ React Component → Zustand Store → window.api.* → IPC Channel → Repositor
 
 ### Database
 
-- **PGlite** - PostgreSQL-compatible embedded database (offline-first)
-- `DatabaseWrapper` class adapts PGlite API and converts `?` placeholders to `$n`
-- Migrations tracked in `_migrations` table
-- Tables: users, currencies, customers, suppliers, product_categories, products, invoices, invoice_items, expenses, donations, app_settings
+- **Bundled PostgreSQL 16** — native PostgreSQL server started/stopped as a child process by `postgresManager.ts`
+- Connected via `pg.Pool` over localhost TCP (port range 15432-15532)
+- `DatabaseWrapper` class wraps `pg.Pool` and converts `?` placeholders to `$n`
+- Data stored in `{userData}/bigtal-pgdata/` (PostgreSQL cluster)
+- Migrations tracked in `migrations` table
+- Tables: users, currencies, customers, suppliers, product_categories, products, invoices, invoice_items, expenses, donations, app_settings, inventory_movements
+- Dev setup: requires PostgreSQL 16 on PATH (system-installed)
+- Production: bundled binaries in `extraResources/postgres/`
 
 ### State Management
 

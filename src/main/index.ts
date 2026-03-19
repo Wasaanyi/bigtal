@@ -1,6 +1,8 @@
-import { app, BrowserWindow, ipcMain, shell, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, Menu, dialog } from 'electron';
 import path from 'path';
 import { initDatabase, closeDatabase } from './database/connection';
+import { postgresManager } from './database/postgresManager';
+import { migrateFromPglite } from './database/migratePgliteData';
 import { runMigrations } from './database/migrations';
 import { registerIpcHandlers } from './ipc';
 import { updaterService } from './services/updaterService';
@@ -67,11 +69,17 @@ ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL_URL, async (_event, url: string) => {
 
 app.whenReady().then(async () => {
   try {
-    // Initialize database
-    await initDatabase();
+    // Start PostgreSQL server
+    const { port } = await postgresManager.start();
 
-    // Run migrations
+    // Initialize database connection
+    await initDatabase(port);
+
+    // Run migrations (must happen before PGlite migration so tables exist)
     await runMigrations();
+
+    // Migrate data from PGlite if legacy database exists
+    await migrateFromPglite();
 
     // Register IPC handlers
     registerIpcHandlers();
@@ -95,6 +103,8 @@ app.whenReady().then(async () => {
     });
   } catch (error) {
     console.error('Failed to initialize app:', error);
+    const msg = error instanceof Error ? error.stack || error.message : String(error);
+    dialog.showErrorBox('Bigtal — Failed to Start', msg);
     app.quit();
   }
 });
@@ -102,10 +112,12 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', async () => {
   if (process.platform !== 'darwin') {
     await closeDatabase();
+    await postgresManager.stop();
     app.quit();
   }
 });
 
 app.on('before-quit', async () => {
   await closeDatabase();
+  await postgresManager.stop();
 });

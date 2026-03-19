@@ -1,55 +1,64 @@
-import { PGlite } from '@electric-sql/pglite';
-import { app } from 'electron';
-import path from 'path';
-import fs from 'fs';
+import { Pool, PoolClient } from 'pg';
 
-// Wrapper to provide a similar API to better-sqlite3
+// Duck type for both Pool and PoolClient query interface
+interface Queryable {
+  query(sql: string, params?: any[]): Promise<{ rows: any[]; rowCount: number | null }>;
+}
+
+export interface TransactionContext {
+  prepare(sql: string): PreparedStatement;
+}
+
 class DatabaseWrapper {
-  private pglite: PGlite;
+  private pool: Pool;
 
-  constructor(pglite: PGlite) {
-    this.pglite = pglite;
+  constructor(pool: Pool) {
+    this.pool = pool;
   }
 
   async exec(sql: string): Promise<void> {
-    await this.pglite.exec(sql);
+    await this.pool.query(sql);
   }
 
   prepare(sql: string): PreparedStatement {
-    return new PreparedStatement(this.pglite, sql);
+    return new PreparedStatement(this.pool, sql);
   }
 
-  transaction<T>(fn: () => T): () => Promise<T> {
-    return async () => {
-      await this.pglite.exec('BEGIN');
-      try {
-        const result = fn();
-        await this.pglite.exec('COMMIT');
-        return result;
-      } catch (error) {
-        await this.pglite.exec('ROLLBACK');
-        throw error;
-      }
-    };
+  async transact<T>(fn: (tx: TransactionContext) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const txCtx: TransactionContext = {
+        prepare: (sql: string) => new PreparedStatement(client, sql),
+      };
+      const result = await fn(txCtx);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async close(): Promise<void> {
-    await this.pglite.close();
+    await this.pool.end();
   }
 
-  getPglite(): PGlite {
-    return this.pglite;
+  getPool(): Pool {
+    return this.pool;
   }
 }
 
 type SqlValue = string | number | boolean | null | undefined;
 
 class PreparedStatement {
-  private pglite: PGlite;
+  private queryable: Queryable;
   private sql: string;
 
-  constructor(pglite: PGlite, sql: string) {
-    this.pglite = pglite;
+  constructor(queryable: Queryable, sql: string) {
+    this.queryable = queryable;
     this.sql = this.convertPlaceholders(sql);
   }
 
@@ -60,17 +69,17 @@ class PreparedStatement {
   }
 
   async get(...params: SqlValue[]): Promise<Record<string, unknown> | undefined> {
-    const result = await this.pglite.query(this.sql, params);
+    const result = await this.queryable.query(this.sql, params);
     return result.rows[0] as Record<string, unknown> | undefined;
   }
 
   async all(...params: SqlValue[]): Promise<Record<string, unknown>[]> {
-    const result = await this.pglite.query(this.sql, params);
+    const result = await this.queryable.query(this.sql, params);
     return result.rows as Record<string, unknown>[];
   }
 
   async run(...params: SqlValue[]): Promise<{ changes: number; lastInsertRowid: number }> {
-    const result = await this.pglite.query(this.sql, params);
+    const result = await this.queryable.query(this.sql, params);
 
     // Try to get the last inserted ID if it was an INSERT with RETURNING
     let lastInsertRowid = 0;
@@ -79,7 +88,7 @@ class PreparedStatement {
     }
 
     return {
-      changes: result.affectedRows ?? 0,
+      changes: result.rowCount ?? 0,
       lastInsertRowid,
     };
   }
@@ -94,26 +103,26 @@ export function getDatabase(): DatabaseWrapper {
   return db;
 }
 
-export async function initDatabase(): Promise<DatabaseWrapper> {
+export async function initDatabase(port: number): Promise<DatabaseWrapper> {
   if (db) {
     return db;
   }
 
-  // Get the user data directory
-  const userDataPath = app.getPath('userData');
-  const dbPath = path.join(userDataPath, 'bigtal-pg');
+  const pool = new Pool({
+    host: '127.0.0.1',
+    port,
+    user: 'postgres',
+    database: 'bigtal',
+    max: 10,
+  });
 
-  // Ensure directory exists
-  if (!fs.existsSync(dbPath)) {
-    fs.mkdirSync(dbPath, { recursive: true });
-  }
+  // Verify connection
+  const client = await pool.connect();
+  client.release();
 
-  console.log('Database path:', dbPath);
+  db = new DatabaseWrapper(pool);
 
-  // Initialize PGlite with persistent storage
-  const pglite = new PGlite(dbPath);
-
-  db = new DatabaseWrapper(pglite);
+  console.log(`Connected to PostgreSQL on port ${port}`);
 
   // Create migrations table if it doesn't exist
   await db.exec(`
@@ -125,6 +134,21 @@ export async function initDatabase(): Promise<DatabaseWrapper> {
   `);
 
   return db;
+}
+
+export async function resetDatabase(): Promise<void> {
+  if (db) {
+    // Drop all tables in the public schema
+    await db.exec(`
+      DO $$ DECLARE
+        r RECORD;
+      BEGIN
+        FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+          EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
+        END LOOP;
+      END $$;
+    `);
+  }
 }
 
 export async function closeDatabase(): Promise<void> {

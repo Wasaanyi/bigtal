@@ -49,6 +49,10 @@ export function SettingsPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [showImportConfirm, setShowImportConfirm] = useState(false);
 
+  // Database reset state
+  const [isResetting, setIsResetting] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+
   useEffect(() => {
     loadAllSettings();
   }, []);
@@ -210,6 +214,24 @@ export function SettingsPage() {
       showNotification('error', 'Failed to import database');
     } finally {
       setIsImporting(false);
+    }
+  };
+
+  const handleResetDatabase = async () => {
+    setShowResetConfirm(false);
+    setIsResetting(true);
+    try {
+      const response = await window.api.database.reset();
+      if (response.success) {
+        showNotification('success', 'Database reset successfully. The app will restart now.');
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        showNotification('error', response.error || 'Failed to reset database');
+      }
+    } catch {
+      showNotification('error', 'Failed to reset database');
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -452,6 +474,33 @@ export function SettingsPage() {
         </div>
       </Card>
 
+      {/* Database Repair */}
+      <Card>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+          Database Repair
+        </h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Use this if the app encounters persistent database errors. This resets all tables and re-runs migrations.
+        </p>
+        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg mb-4">
+          <p className="text-sm text-red-700 dark:text-red-400">
+            <strong>Danger:</strong> Resetting the database permanently erases all data (invoices, products, customers, etc.). Export individual tables as CSV first if you need to keep records.
+          </p>
+        </div>
+        <Button
+          variant="danger"
+          onClick={() => setShowResetConfirm(true)}
+          isLoading={isResetting}
+          leftIcon={
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+          }
+        >
+          Reset Database
+        </Button>
+      </Card>
+
       {/* Import Confirmation Modal */}
       {showImportConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -469,6 +518,31 @@ export function SettingsPage() {
               </Button>
               <Button variant="danger" onClick={handleImportDatabase}>
                 Yes, Import Database
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Confirmation Modal */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-md mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Reset Database?
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-3">
+              This will <strong className="text-red-600 dark:text-red-400">permanently erase ALL data</strong>: invoices, products, customers, expenses, and settings.
+            </p>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              The app will reload with a fresh, empty database. This cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setShowResetConfirm(false)}>
+                Cancel
+              </Button>
+              <Button variant="danger" onClick={handleResetDatabase}>
+                Yes, Reset Everything
               </Button>
             </div>
           </div>

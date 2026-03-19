@@ -27,7 +27,19 @@ export async function runMigrations(): Promise<void> {
   const appliedMigrations = await db
     .prepare('SELECT name FROM migrations')
     .all() as { name: string }[];
-  const appliedNames = new Set(appliedMigrations.map((m) => m.name));
+  let appliedNames = new Set(appliedMigrations.map((m) => m.name));
+
+  // Sanity check: if migrations claim "applied" but core tables don't exist,
+  // clear stale records so migrations re-run (fixes broken PGlite migration order)
+  if (appliedNames.size > 0) {
+    try {
+      await db.prepare("SELECT 1 FROM users LIMIT 1").all();
+    } catch {
+      console.warn('Migrations: stale records detected (tables missing). Clearing migration history to re-run.');
+      await db.exec('DELETE FROM migrations');
+      appliedNames = new Set();
+    }
+  }
 
   // Run pending migrations
   for (const migration of migrations) {
