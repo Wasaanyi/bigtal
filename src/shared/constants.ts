@@ -104,6 +104,9 @@ export const IPC_CHANNELS = {
   DATABASE_IMPORT: 'database:import',
   DATABASE_RESET: 'database:reset',
 
+  // Cloud migration
+  CLOUD_EXPORT: 'cloud:export',
+
   // Reports
   REPORTS_SALES: 'reports:sales',
   REPORTS_INVENTORY: 'reports:inventory',

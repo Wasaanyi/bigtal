@@ -1,6 +1,6 @@
 {
   "name": "bigtal",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Small Business Management Desktop App for African Shops",
   "main": "dist/main/main/index.js",
   "author": "James Wasaanyi",

@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useDataStore } from '../store/dataStore';
 import { useAuthStore } from '../store/authStore';
 import { useUIStore } from '../store/uiStore';
-import { Table, Button, Drawer, Input, Select, TextArea } from '../components/ui';
+import { Table, Button, Drawer, Input, Select, TextArea, Autocomplete } from '../components/ui';
+import type { AutocompleteOption } from '../components/ui';
 import type { InventoryMovement, CreateInventoryDTO, InventoryMovementType } from '../../shared/types';
 
 const MOVEMENT_TYPES: { value: InventoryMovementType; label: string }[] = [
@@ -23,6 +24,7 @@ export function InventoryPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<InventoryMovementType | 'all'>('all');
+  const [selectedProduct, setSelectedProduct] = useState<AutocompleteOption | null>(null);
 
   // Form state
   const [formData, setFormData] = useState<CreateInventoryDTO>({
@@ -62,8 +64,9 @@ export function InventoryPage() {
   });
 
   const openAddStockModal = () => {
+    setSelectedProduct(null);
     setFormData({
-      product_id: products[0]?.id || 0,
+      product_id: 0,
       quantity: 0,
       movement_type: 'purchase',
       notes: '',
@@ -291,14 +294,19 @@ export function InventoryPage() {
         }
       >
         <div className="space-y-4">
-          <Select
+          <Autocomplete
             label="Product"
+            placeholder="Search for a product..."
             options={products.map((p) => ({
-              value: p.id,
-              label: `${p.name} (Current: ${p.stock_qty})`,
+              id: p.id,
+              label: p.name,
+              subtitle: `Current stock: ${p.stock_qty}`,
             }))}
-            value={formData.product_id}
-            onChange={(e) => setFormData({ ...formData, product_id: Number(e.target.value) })}
+            value={selectedProduct}
+            onChange={(option) => {
+              setSelectedProduct(option);
+              setFormData({ ...formData, product_id: option ? Number(option.id) : 0 });
+            }}
           />
 
           <Select

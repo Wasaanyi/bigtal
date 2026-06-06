@@ -49,6 +49,9 @@ export function SettingsPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [showImportConfirm, setShowImportConfirm] = useState(false);
 
+  // Cloud export state
+  const [isExportingCloud, setIsExportingCloud] = useState(false);
+
   // Database reset state
   const [isResetting, setIsResetting] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -197,6 +200,22 @@ export function SettingsPage() {
       showNotification('error', 'Failed to export database');
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleExportCloud = async () => {
+    setIsExportingCloud(true);
+    try {
+      const response = await window.api.cloud.export();
+      if (response.success && response.data) {
+        showNotification('success', 'Cloud export file created. Upload it in Bigtal Cloud → Import.');
+      } else if (response.error !== 'Export cancelled') {
+        showNotification('error', response.error || 'Failed to create cloud export');
+      }
+    } catch {
+      showNotification('error', 'Failed to create cloud export');
+    } finally {
+      setIsExportingCloud(false);
     }
   };
 
@@ -471,6 +490,41 @@ export function SettingsPage() {
               <strong>Warning:</strong> Importing a database will replace all current data. Make sure to export your current data first if you want to keep it.
             </p>
           </div>
+        </div>
+      </Card>
+
+      {/* Cloud Migration */}
+      <Card>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+          Move to Bigtal Cloud
+        </h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+          Export your data as a cloud file, then sign in to Bigtal Cloud and choose <strong>Import</strong> to upload it.
+        </p>
+
+        <div className="flex-1 p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+          <h4 className="font-medium text-gray-900 dark:text-white mb-2">Export for Cloud</h4>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+            Creates a <code className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-xs">.json</code> file with all your products, customers, invoices, expenses and stock movements to upload in Bigtal Cloud.
+          </p>
+          <Button
+            variant="secondary"
+            onClick={handleExportCloud}
+            isLoading={isExportingCloud}
+            leftIcon={
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999A5.002 5.002 0 005.1 8.5 4.002 4.002 0 003 15z" />
+              </svg>
+            }
+          >
+            Export for Cloud
+          </Button>
+        </div>
+
+        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <p className="text-sm text-blue-700 dark:text-blue-400">
+            <strong>Note:</strong> Cloud import is only allowed into a fresh cloud business with no data yet. Your local sign-in accounts are not transferred — the cloud owner can re-invite team members after importing.
+          </p>
         </div>
       </Card>
 

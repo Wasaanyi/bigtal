@@ -67,6 +67,23 @@ ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL_URL, async (_event, url: string) => {
   }
 });
 
+// Global safety nets: surface/log errors that escape the async init path or a
+// detached promise instead of crashing the process silently.
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error);
+  const msg = error instanceof Error ? error.stack || error.message : String(error);
+  // Avoid stacking dialogs if the window already failed to open.
+  try {
+    dialog.showErrorBox('Bigtal — Unexpected Error', msg);
+  } catch {
+    // dialog may be unavailable very early in startup; the log above suffices.
+  }
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason);
+});
+
 app.whenReady().then(async () => {
   try {
     // Start PostgreSQL server

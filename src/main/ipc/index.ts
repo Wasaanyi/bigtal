@@ -20,6 +20,7 @@ import { exportService } from '../services/exportService';
 import { emailService, EmailConfig } from '../services/emailService';
 import { businessService } from '../services/businessService';
 import { databaseBackupService } from '../services/databaseBackupService';
+import { cloudExportService } from '../services/cloudExportService';
 import { resetDatabase, initDatabase } from '../database/connection';
 import { postgresManager } from '../database/postgresManager';
 import { runMigrations } from '../database/migrations';
@@ -1053,6 +1054,19 @@ export function registerIpcHandlers(): void {
       await resetDatabase();
       await runMigrations();
       return createResponse(undefined);
+    } catch (error) {
+      return createError((error as Error).message);
+    }
+  });
+
+  // Cloud migration handler
+  ipcMain.handle(IPC_CHANNELS.CLOUD_EXPORT, async () => {
+    try {
+      const result = await cloudExportService.exportForCloud();
+      if (result.success) {
+        return createResponse(result.filePath);
+      }
+      return createError(result.error || 'Cloud export failed');
     } catch (error) {
       return createError((error as Error).message);
     }

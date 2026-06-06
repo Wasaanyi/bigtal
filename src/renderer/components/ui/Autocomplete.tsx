@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-interface AutocompleteOption {
+export interface AutocompleteOption {
   id: number | string;
   label: string;
   subtitle?: string;

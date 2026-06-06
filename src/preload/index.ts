@@ -268,6 +268,12 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke(IPC_CHANNELS.DATABASE_RESET),
   },
 
+  // Cloud migration
+  cloud: {
+    export: (): Promise<ApiResponse<string>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.CLOUD_EXPORT),
+  },
+
   // Reports
   reports: {
     sales: (startDate: string, endDate: string): Promise<ApiResponse<SalesReportData>> =>
@@ -453,6 +459,9 @@ declare global {
         export: () => Promise<ApiResponse<string>>;
         import: () => Promise<ApiResponse<void>>;
         reset: () => Promise<ApiResponse<void>>;
+      };
+      cloud: {
+        export: () => Promise<ApiResponse<string>>;
       };
       reports: {
         sales: (startDate: string, endDate: string) => Promise<ApiResponse<SalesReportData>>;
