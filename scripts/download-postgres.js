@@ -4,9 +4,14 @@
  * Downloads and extracts PostgreSQL binaries for the target platform.
  * Usage: node scripts/download-postgres.js [win|mac|linux]
  *
- * Windows: downloads from EnterpriseDB binary archive
+ * Windows: downloads full relocatable binaries from theseus-rs/postgresql-binaries
  * macOS:   installs via Homebrew and copies binaries
- * Linux:   downloads from EnterpriseDB binary archive
+ * Linux:   downloads full relocatable binaries from theseus-rs/postgresql-binaries
+ *
+ * Note: we use theseus-rs GitHub Releases rather than EnterpriseDB because EDB's
+ * CDN blocks CI runner IPs (HTTP 403) and never hosted Linux binaries. Unlike
+ * the zonky embedded archives (server-only), theseus-rs ships the complete tool
+ * set (pg_dump/pg_restore/createdb/dropdb/psql) the backup/restore feature needs.
  */
 
 const https = require('https');
@@ -16,16 +21,22 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const PG_VERSION = '17.5';
+// theseus-rs tags releases as <pgversion>.0 (e.g. 17.5.0).
+const THESEUS_VERSION = `${PG_VERSION}.0`;
+const THESEUS_TARGET = {
+  win: 'x86_64-pc-windows-msvc',
+  linux: 'x86_64-unknown-linux-gnu',
+};
+
+function theseusUrl(platform) {
+  const target = THESEUS_TARGET[platform];
+  return `https://github.com/theseus-rs/postgresql-binaries/releases/download/${THESEUS_VERSION}/postgresql-${THESEUS_VERSION}-${target}.tar.gz`;
+}
 
 const ESSENTIAL_BINS = [
   'postgres', 'pg_ctl', 'initdb', 'createdb', 'dropdb',
   'pg_dump', 'pg_restore', 'psql',
 ];
-
-const URLS = {
-  win: `https://get.enterprisedb.com/postgresql/postgresql-${PG_VERSION}-1-windows-x64-binaries.zip`,
-  linux: `https://get.enterprisedb.com/postgresql/postgresql-${PG_VERSION}-1-linux-x64-binaries.tar.gz`,
-};
 
 const targetPlatform = process.argv[2] || {
   win32: 'win',
@@ -44,7 +55,10 @@ function download(url, dest) {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest);
     const get = url.startsWith('https') ? https.get : http.get;
-    get(url, (response) => {
+    // EnterpriseDB's CDN now returns HTTP 403 to requests without a
+    // User-Agent header (Node's http(s).get sends none by default), so set one.
+    const options = { headers: { 'User-Agent': 'bigtal-postgres-fetch/1.0' } };
+    get(url, options, (response) => {
       if (response.statusCode === 302 || response.statusCode === 301) {
         file.close();
         fs.unlinkSync(dest);
@@ -79,35 +93,26 @@ function download(url, dest) {
   });
 }
 
-async function extractWindows(zipPath) {
-  const extractDir = path.join(path.dirname(zipPath), 'pg-extract');
+// The theseus-rs tarball contains a single top-level directory
+// (postgresql-<ver>-<target>/) holding bin/, lib/, share/.
+async function extractTheseus(tarPath) {
+  const workDir = path.join(path.dirname(tarPath), 'pg-extract');
+  fs.rmSync(workDir, { recursive: true, force: true });
+  fs.mkdirSync(workDir, { recursive: true });
 
   console.log('Extracting...');
-  execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${extractDir}' -Force"`, {
-    stdio: 'inherit',
-  });
+  // `tar -xf` auto-detects gzip on both GNU tar (Linux) and bsdtar (Windows).
+  execSync(`tar -xf "${tarPath}" -C "${workDir}"`, { stdio: 'inherit' });
 
-  const pgsqlDir = path.join(extractDir, 'pgsql');
-  copyPgsqlDir(pgsqlDir);
+  const dirs = fs
+    .readdirSync(workDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory());
+  const pgRoot = dirs.length === 1 ? path.join(workDir, dirs[0].name) : workDir;
 
-  // Cleanup
-  fs.rmSync(extractDir, { recursive: true, force: true });
-  fs.unlinkSync(zipPath);
-  console.log('  Cleaned up temp files');
-}
-
-async function extractLinux(tarPath) {
-  const extractDir = path.join(path.dirname(tarPath), 'pg-extract');
-  fs.mkdirSync(extractDir, { recursive: true });
-
-  console.log('Extracting...');
-  execSync(`tar -xzf "${tarPath}" -C "${extractDir}"`, { stdio: 'inherit' });
-
-  const pgsqlDir = path.join(extractDir, 'pgsql');
-  copyPgsqlDir(pgsqlDir);
+  copyPgsqlDir(pgRoot);
 
   // Cleanup
-  fs.rmSync(extractDir, { recursive: true, force: true });
+  fs.rmSync(workDir, { recursive: true, force: true });
   fs.unlinkSync(tarPath);
   console.log('  Cleaned up temp files');
 }
@@ -236,15 +241,15 @@ async function main() {
   fs.mkdirSync(outDir, { recursive: true });
 
   if (targetPlatform === 'win') {
-    const zipPath = path.join(outDir, '..', 'pg-win.zip');
-    await download(URLS.win, zipPath);
-    await extractWindows(zipPath);
+    const tarPath = path.join(outDir, '..', 'pg-win.tar.gz');
+    await download(theseusUrl('win'), tarPath);
+    await extractTheseus(tarPath);
   } else if (targetPlatform === 'mac') {
     await prepareMac();
   } else if (targetPlatform === 'linux') {
     const tarPath = path.join(outDir, '..', 'pg-linux.tar.gz');
-    await download(URLS.linux, tarPath);
-    await extractLinux(tarPath);
+    await download(theseusUrl('linux'), tarPath);
+    await extractTheseus(tarPath);
   }
 
   console.log(`\nDone! Binaries ready in: ${outDir}`);
