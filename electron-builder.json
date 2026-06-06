@@ -61,6 +61,7 @@
     "icon": "assets/icons",
     "artifactName": "${productName}-${version}-linux.${ext}",
     "category": "Office",
+    "maintainer": "James Wasaanyi <jwasaanyi@gmail.com>",
     "extraResources": [
       {
         "from": "postgres-binaries/linux/",
