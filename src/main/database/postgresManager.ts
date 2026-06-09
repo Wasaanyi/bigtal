@@ -140,7 +140,9 @@ host    all       all   ::1/128       trust
   fs.writeFileSync(path.join(dataDir, 'pg_hba.conf'), pgHbaConf);
 }
 
-async function waitForReady(port: number, timeoutMs = 15000): Promise<void> {
+// Cold first launches (fresh initdb, antivirus scanning the freshly extracted
+// binaries) can take far longer than a warm start, so allow a generous window.
+async function waitForReady(port: number, timeoutMs = 60000): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
@@ -251,13 +253,19 @@ async function start(): Promise<{ port: number }> {
     await waitForReady(port);
   } catch (err) {
     const pgLog = stderrChunks.join('\n');
+    // Kill the (possibly still-spawning) server so a retry starts from a clean
+    // slate instead of fighting an orphaned process on the same data dir.
+    if (pgProcess) {
+      try { pgProcess.kill('SIGKILL'); } catch { /* ignore */ }
+      pgProcess = null;
+    }
     if (earlyExit) {
       throw new Error(
         `PostgreSQL exited immediately with code ${exitCode}.\n\nPostgreSQL log:\n${pgLog || '(no output)'}`
       );
     }
     throw new Error(
-      `PostgreSQL did not become ready within 15s.\n\nPostgreSQL log:\n${pgLog || '(no output)'}`
+      `PostgreSQL did not become ready in time.\n\nPostgreSQL log:\n${pgLog || '(no output)'}`
     );
   }
   pgPort = port;

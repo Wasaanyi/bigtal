@@ -9,8 +9,60 @@ import { updaterService } from './services/updaterService';
 import { IPC_CHANNELS } from '../shared/constants';
 
 let mainWindow: BrowserWindow | null = null;
+let splashWindow: BrowserWindow | null = null;
 
 const isDev = !app.isPackaged;
+
+// Lightweight splash shown immediately while PostgreSQL starts, so a cold first
+// launch looks intentional ("Starting…") rather than a frozen / failed app.
+const SPLASH_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
+  html,body{margin:0;height:100%;overflow:hidden;font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;
+        background:linear-gradient(160deg,#0b3d2e 0%,#0f5132 100%);color:#fff}
+  .brand{font-size:34px;font-weight:800;letter-spacing:.5px}
+  .spinner{width:34px;height:34px;border:3px solid rgba(255,255,255,.25);border-top-color:#fff;
+           border-radius:50%;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .status{font-size:13px;opacity:.85;min-height:18px}
+</style></head><body><div class="wrap">
+  <div class="brand">Bigtal</div>
+  <div class="spinner"></div>
+  <div class="status" id="status">Starting up…</div>
+</div></body></html>`;
+
+function createSplashWindow(): void {
+  splashWindow = new BrowserWindow({
+    width: 420,
+    height: 280,
+    frame: false,
+    resizable: false,
+    center: true,
+    show: true,
+    backgroundColor: '#0b3d2e',
+    title: 'Bigtal',
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
+  });
+  splashWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(SPLASH_HTML));
+  splashWindow.on('closed', () => {
+    splashWindow = null;
+  });
+}
+
+function setSplashStatus(text: string): void {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.webContents
+      .executeJavaScript(`document.getElementById('status').textContent = ${JSON.stringify(text)}`)
+      .catch(() => {
+        /* splash may be closing */
+      });
+  }
+}
+
+function closeSplash(): void {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+  }
+}
 
 function createWindow(): void {
   // Hide the application menu
@@ -35,6 +87,7 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show();
+    closeSplash();
   });
 
   mainWindow.on('closed', () => {
@@ -84,46 +137,85 @@ process.on('unhandledRejection', (reason) => {
   console.error('Unhandled promise rejection:', reason);
 });
 
-app.whenReady().then(async () => {
-  try {
-    // Start PostgreSQL server
-    const { port } = await postgresManager.start();
+// One full attempt at bringing the database online.
+async function initDatabaseStack(): Promise<void> {
+  const { port } = await postgresManager.start();
+  await initDatabase(port);
+  // Migrations must run before the PGlite migration so tables exist.
+  await runMigrations();
+  await migrateFromPglite();
+}
 
-    // Initialize database connection
-    await initDatabase(port);
-
-    // Run migrations (must happen before PGlite migration so tables exist)
-    await runMigrations();
-
-    // Migrate data from PGlite if legacy database exists
-    await migrateFromPglite();
-
-    // Register IPC handlers
-    registerIpcHandlers();
-
-    // Create window
-    createWindow();
-
-    // Initialize auto-updater
-    if (mainWindow) {
-      updaterService.setWindow(mainWindow);
-      updaterService.init();
-      mainWindow.webContents.once('did-finish-load', () => {
-        setTimeout(() => updaterService.checkForUpdates(), 3000);
-      });
-    }
-
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow();
+// Retry the database startup before surfacing an error — the first launch on a
+// cold machine often just needs a second go once the OS/antivirus settles.
+async function startDatabaseWithRetries(maxAttempts = 2): Promise<Error | null> {
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      setSplashStatus(attempt === 1 ? 'Starting database…' : `Starting database… (retry ${attempt})`);
+      await initDatabaseStack();
+      return null;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.error(`Database init attempt ${attempt} failed:`, error);
+      // Reset connection + server so the next attempt starts clean.
+      try { await closeDatabase(); } catch { /* ignore */ }
+      try { await postgresManager.stop(); } catch { /* ignore */ }
+      if (attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 1500));
       }
-    });
-  } catch (error) {
-    console.error('Failed to initialize app:', error);
-    const msg = error instanceof Error ? error.stack || error.message : String(error);
-    dialog.showErrorBox('Bigtal — Failed to Start', msg);
-    app.quit();
+    }
   }
+  return lastError;
+}
+
+app.whenReady().then(async () => {
+  createSplashWindow();
+
+  // Keep retrying (with an explicit prompt between rounds) instead of quitting
+  // outright, so a transient first-run hiccup never forces a manual relaunch.
+  let error = await startDatabaseWithRetries();
+  while (error) {
+    const choice = dialog.showMessageBoxSync({
+      type: 'error',
+      buttons: ['Retry', 'Quit'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Bigtal — Startup Problem',
+      message: 'Bigtal could not start its database.',
+      detail:
+        'This sometimes happens on the very first launch while your system finishes setting up. ' +
+        'Please click Retry.\n\nDetails:\n' +
+        error.message,
+    });
+    if (choice !== 0) {
+      app.quit();
+      return;
+    }
+    setSplashStatus('Retrying…');
+    error = await startDatabaseWithRetries();
+  }
+
+  // Register IPC handlers (once) now that the database is ready.
+  registerIpcHandlers();
+
+  // Create window
+  createWindow();
+
+  // Initialize auto-updater
+  if (mainWindow) {
+    updaterService.setWindow(mainWindow);
+    updaterService.init();
+    mainWindow.webContents.once('did-finish-load', () => {
+      setTimeout(() => updaterService.checkForUpdates(), 3000);
+    });
+  }
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
 });
 
 app.on('window-all-closed', async () => {
